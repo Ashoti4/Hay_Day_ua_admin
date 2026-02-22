@@ -1,126 +1,149 @@
 import json
 import os
 import asyncio
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, ContentType
+from aiogram.types import Message
 
 # --- НАЛАШТУВАННЯ ---
 TOKEN = "8571874406:AAFw4X1B9GGfOluteAPkRMvoTYxlgG2bdd0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Файли
-REP_FILE = "reputation.json"
-STATS_FILE = "stats.json"
+# Файли для збереження даних (вимога від 22.02.2026)
+REP_FILE = "reputation_history.json"
 FILTERS_FILE = "filters.json"
 
 def load_data(file):
     if os.path.exists(file):
-        with open(file, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return {}
     return {}
 
 def save_data(file, data):
     with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-reputation = load_data(REP_FILE)
-stats = load_data(STATS_FILE)
-filters = load_data(FILTERS_FILE) # Структура: {"chat_id": {"слово": {"text": "...", "photo": "..."}}}
+# Завантажуємо дані при старті
+rep_data = load_data(REP_FILE) 
+# Структура: {"uid": {"name": "Ім'я", "history": ["2026-02-22", "2026-02-22"]}}
+filters = load_data(FILTERS_FILE)
 
-# --- ФУНКЦІЇ ---
-
+# --- ПРИВІТАННЯ ---
 @dp.message(F.new_chat_members)
-async def welcome_new_member(message: Message):
+async def welcome(message: Message):
     for member in message.new_chat_members:
         text = (
-            f"Вітаємо, {member.mention_html()}! 👨‍🌾\n\n"
-            f"Ти знайшов свій дім у <b>Hay Day</b> 🌾\n"
+            f"Вітаємо, {member.mention_html()}! 🍎\n\n"
+            f"Ти знайшов свій дім у <b>Hay Day</b> ✨\n"
             f"Наш чат — найкраще місце для:\n"
-            f"📦 Обміну товарами\n"
-            f"💡 Порад фермерів\n"
-            f"📢 Новин та оновлень\n"
+            f"📦 Обміну товарами (забудь про дефіцит!)\n"
+            f"💡 Порад від досвідчених фермерів\n"
+            f"📢 Новин про події та оновлення\n"
             f"🇺🇦 Мова чату українська!\n\n"
             f"Почни спілкування просто зараз!"
         )
         await message.answer(text, parse_mode="HTML")
 
+# --- РЕПУТАЦІЯ ("+") ---
+@dp.message(F.text == "+")
+async def add_rep(message: Message):
+    if not message.reply_to_message: return
+    target = message.reply_to_message.from_user
+    if target.id == message.from_user.id: return # Самому собі не можна
+    
+    uid = str(target.id)
+    today = datetime.now().strftime("%Y-%m-%d")
+    name = target.full_name
+
+    if uid not in rep_data:
+        rep_data[uid] = {"name": name, "history": []}
+    
+    rep_data[uid]["history"].append(today)
+    rep_data[uid]["name"] = name # Оновлюємо ім'я
+    save_data(REP_FILE, rep_data)
+    
+    await message.answer(f"👍 {name} отримав +1 до репутації! (Всього: {len(rep_data[uid]['history'])})")
+
+# --- ТОП ЗА ВЕСЬ ЧАС ---
+@dp.message(Command("toprep"))
+async def top_total(message: Message):
+    items = []
+    for uid, data in rep_data.items():
+        items.append((data["name"], len(data["history"])))
+    
+    items.sort(key=lambda x: x[1], reverse=True)
+    msg = "🏆 <b>ТОП-20 репутації за весь час:</b>\n\n"
+    for i, (name, score) in enumerate(items[:20], 1):
+        msg += f"{i}. {name} — <b>{score}</b>\n"
+    await message.answer(msg, parse_mode="HTML")
+
+# --- ТОП ЗА ПЕРІОД (/toprepm 2026.01.01 2026.02.21) ---
+@dp.message(Command("toprepm"))
+async def top_period(message: Message, command: CommandObject):
+    if not command.args or len(command.args.split()) < 2:
+        return await message.answer("Використовуй: <code>/toprepm 2026.01.01 2026.02.21</code>", parse_mode="HTML")
+    
+    try:
+        args = command.args.replace(".", "-").split()
+        start_dt = datetime.strptime(args[0], "%Y-%m-%d")
+        end_dt = datetime.strptime(args[1], "%Y-%m-%d")
+    except:
+        return await message.answer("Помилка формату! Треба: РРРР.ММ.ДД")
+
+    period_results = []
+    for uid, data in rep_data.items():
+        count = 0
+        for d_str in data["history"]:
+            curr_d = datetime.strptime(d_str, "%Y-%m-%d")
+            if start_dt <= curr_d <= end_dt:
+                count += 1
+        if count > 0:
+            period_results.append((data["name"], count))
+
+    period_results.sort(key=lambda x: x[1], reverse=True)
+    
+    msg = f"📊 <b>ТОП-20 за період {args[0]} — {args[1]}:</b>\n\n"
+    if not period_results:
+        msg += "За цей період ніхто не отримував репутацію."
+    else:
+        for i, (name, score) in enumerate(period_results[:20], 1):
+            msg += f"{i}. {name} — <b>{score}</b>\n"
+    
+    await message.answer(msg, parse_mode="HTML")
+
+# --- ФІЛЬТРИ ---
 @dp.message(Command("filter"))
-async def add_filter(message: Message, command: CommandObject):
+async def set_filter(message: Message, command: CommandObject):
     chat_id = str(message.chat.id)
     if chat_id not in filters: filters[chat_id] = {}
     
-    args = command.args.split(maxsplit=1) if command.args else []
+    if not message.reply_to_message or not command.args:
+        return await message.answer("Відповідай на повідомлення командою: <code>/filter слово</code>", parse_mode="HTML")
     
-    if message.reply_to_message and len(args) >= 1:
-        # Варіант 1: відповідь на повідомлення
-        trigger = args[0].lower()
-        photo_id = message.reply_to_message.photo[-1].file_id if message.reply_to_message.photo else None
-        text = message.reply_to_message.text or message.reply_to_message.caption
-    elif len(args) >= 2:
-        # Варіант 2: /filter слово текст
-        trigger = args[0].lower()
-        text = args[1]
-        photo_id = None
-    else:
-        return await message.answer("Приклад: /filter слово текст (або відповіддю)")
-
-    filters[chat_id][trigger] = {"text": text, "photo": photo_id}
+    trigger = command.args.lower()
+    rep = message.reply_to_message
+    
+    filters[chat_id][trigger] = {
+        "text": rep.text or rep.caption,
+        "photo": rep.photo[-1].file_id if rep.photo else None
+    }
     save_data(FILTERS_FILE, filters)
-    await message.answer(f"✅ Збережено фільтр '{trigger}' для цього чату!")
-
-@dp.message(F.text == "+")
-async def rep_plus(message: Message):
-    if not message.reply_to_message: return
-    user = message.reply_to_message.from_user
-    uid = str(user.id)
-    # Зберігаємо нік та тег для ТОПу
-    name = f"{user.full_name} (@{user.username})" if user.username else user.full_name
-    
-    reputation[uid] = reputation.get(uid, {"score": 0, "name": name})
-    reputation[uid]["score"] += 1
-    reputation[uid]["name"] = name
-    
-    save_data(REP_FILE, reputation)
-    await message.answer(f"Красава! +1 до карми. Тепер у тебе {reputation[uid]['score']}\n🏆 Твій рівень поваги: {reputation[uid]['score']}")
-
-@dp.message(Command("toprep"))
-async def top_rep(message: Message):
-    # Сортуємо по score
-    sorted_rep = sorted(reputation.items(), key=lambda x: x[1]['score'], reverse=True)[:20]
-    msg = "🏆 <b>ТОП-20 репутації чату:</b>\n\n"
-    for i, (uid, data) in enumerate(sorted_rep, 1):
-        msg += f"{i}. {data['name']} | ID: <code>{uid}</code> — <b>{data['score']}</b>\n"
-    await message.answer(msg, parse_mode="HTML")
-
-@dp.message(Command("statistics"))
-async def show_stats(message: Message):
-    uid = str(message.from_user.id)
-    count = stats.get(uid, 0)
-    await message.answer(f"📊 Кількість ваших повідомлень: {count}")
+    await message.answer(f"✅ Фільтр на слово '{trigger}' збережено!")
 
 @dp.message()
-async def global_handler(message: Message):
-    uid = str(message.from_user.id)
-    chat_id = str(message.chat.id)
+async def handle_all(message: Message):
+    if not message.text: return
+    cid = str(message.chat.id)
+    word = message.text.lower()
     
-    # Статистика
-    stats[uid] = stats.get(uid, 0) + 1
-    save_data(STATS_FILE, stats)
+    if cid in filters and word in filters[cid]:
+        f = filters[cid][word]
+        if f["photo"]: await message.answer_photo(f["photo"], caption=f["text"] or "")
+        else: await message.answer(f["text"])
 
-    # Локальні фільтри чату
-    if message.text and chat_id in filters:
-        word = message.text.lower()
-        if word in filters[chat_id]:
-            f = filters[chat_id][word]
-            if f["photo"]:
-                await message.answer_photo(f["photo"], caption=f["text"] or "")
-            else:
-                await message.answer(f["text"])
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def main(): await dp.start_polling(bot)
+if __name__ == "__main__": asyncio.run(main())
