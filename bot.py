@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import Message, ReactionTypeEmoji
 from aiogram.utils.markdown import hlink
 
 # --- НАЛАШТУВАННЯ ---
@@ -57,13 +57,13 @@ async def welcome(message: Message):
 async def goodbye(message: Message):
     user_name = message.left_chat_member.full_name
     bye_texts = [
-        f"💨 {user_name} втік(ла) з ферми... Певно, Грег налякав.",
+        f"💨 {user_name} втік(ла) з ферми... Певно, коза в жопу баданула. 🐐",
         f"🚜 {user_name} поїхав(ла) на іншу ферму. Повертайся ще!",
         f"👋 Мінус один у курилці. Бувай, {user_name}!"
     ]
     await message.answer(f"{random.choice(bye_texts)}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
-# --- РЕПУТАЦІЯ (+ ТА -) ---
+# --- РЕПУТАЦІЯ (+ ТА -) З РЕАКЦІЯМИ ---
 @dp.message(F.text.in_({"+", "-"}))
 async def change_rep(message: Message):
     if not message.reply_to_message: return
@@ -82,10 +82,12 @@ async def change_rep(message: Message):
         db[uid]["rep_history"].append(today)
         action_text = "отримав +1 до репутації!"
         emoji = "👍"
+        await message.set_reaction(reaction=[ReactionTypeEmoji(emoji="👍")])
     else:
         if len(db[uid]["rep_history"]) > 0: db[uid]["rep_history"].pop()
         action_text = "втратив -1 від репутації!"
         emoji = "👎"
+        await message.set_reaction(reaction=[ReactionTypeEmoji(emoji="👎")])
     
     db[uid]["name"] = target.full_name
     save_data(DATA_FILE, db)
@@ -94,7 +96,7 @@ async def change_rep(message: Message):
     resp = f"{emoji} {get_user_link(uid, target.full_name)} {action_text}\nТвоя репутація: <b>{total_rep}</b>"
     await message.answer(f"{resp}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
-# --- ТОПИ РЕПУТАЦІЇ ---
+# --- ТОПИ ТА СТАТИСТИКА ПЕРІОДІВ ---
 @dp.message(Command("toprep"))
 async def top_total(message: Message):
     items = [(data["name"], uid, len(data.get("rep_history", []))) for uid, data in db.items() if len(data.get("rep_history", [])) > 0]
@@ -119,9 +121,8 @@ async def top_period(message: Message, command: CommandObject):
         msg = f"🗓 <b>ТОП репутації за {args[0]} — {args[1]}:</b>\n\n"
         for i, (name, uid, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(uid, name)} — <b>{s}</b>\n"
         await message.answer(f"{msg if res else 'Даних немає.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
-    except: await message.answer("Помилка формату!")
+    except: await message.answer(f"Помилка формату дат!{get_footer()}", parse_mode="HTML")
 
-# --- СТАТИСТИКА ПОВІДОМЛЕНЬ ---
 @dp.message(Command("statistics"))
 async def stats_total(message: Message):
     items = [(data["name"], uid, len(data.get("msg_history", []))) for uid, data in db.items() if len(data.get("msg_history", [])) > 0]
@@ -146,7 +147,7 @@ async def stats_period_msg(message: Message, command: CommandObject):
         msg = f"🗓 <b>Статистика повідомлень за {args[0]} — {args[1]}:</b>\n\n"
         for i, (name, uid, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(uid, name)} — <b>{s}</b>\n"
         await message.answer(f"{msg if res else 'Даних немає.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
-    except: await message.answer("Помилка формату!")
+    except: await message.answer(f"Помилка формату дат!{get_footer()}", parse_mode="HTML")
 
 # --- ФІЛЬТРИ (АДМІН) ---
 @dp.message(Command("filters"))
