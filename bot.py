@@ -56,105 +56,103 @@ async def welcome(message: Message):
 @dp.message(F.left_chat_member)
 async def goodbye(message: Message):
     user_name = message.left_chat_member.full_name
-    bye_texts = [
-        f"💨 {user_name} втік(ла) з ферми... Певно, коза в сраку врізалась. 🐐🍑",
-        f"🚜 {user_name} поїхав(ла) на іншу ферму. Повертайся ще!",
-        f"💨👋 Мінус один у курилці. Бувай, {user_name}!"
-    ]
-    await message.answer(f"{random.choice(bye_texts)}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
+    bye_text = f"🌬 {user_name} втік(ла) з ферми... Певно, коза в дупу боднула"
+    await message.answer(f"{bye_text}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
-# --- РЕПУТАЦІЯ (+ ТА -) ---
+# --- РЕПУТАЦІЯ ОКРЕМО ДЛЯ КОЖНОГО ЧАТУ ---
 @dp.message(F.text.in_({"+", "-"}))
 async def change_rep(message: Message):
     if not message.reply_to_message: return
     target = message.reply_to_message.from_user
     if target.id == message.from_user.id or target.is_bot: return
     
-    uid = str(target.id)
+    cid, uid = str(message.chat.id), str(target.id)
     today = datetime.now().strftime("%Y-%m-%d")
     
-    if uid not in db: 
-        db[uid] = {"name": target.full_name, "rep_history": [], "msg_history": []}
-    
-    db[uid].setdefault("rep_history", [])
+    if cid not in db: db[cid] = {}
+    if uid not in db[cid]: 
+        db[cid][uid] = {"name": target.full_name, "rep_history": [], "msg_history": []}
     
     if message.text == "+":
-        db[uid]["rep_history"].append(today)
-        action_text = "отримав +1 до репутації!"
-        emoji = "👍"
+        db[cid][uid]["rep_history"].append(today)
+        act, emo = "отримав +1 до репутації!", "👍"
     else:
-        if len(db[uid]["rep_history"]) > 0: db[uid]["rep_history"].pop()
-        action_text = "втратив -1 від репутації!"
-        emoji = "👎"
+        if len(db[cid][uid]["rep_history"]) > 0: db[cid][uid]["rep_history"].pop()
+        act, emo = "втратив -1 від репутації!", "👎"
     
-    db[uid]["name"] = target.full_name
+    db[cid][uid]["name"] = target.full_name
     save_data(DATA_FILE, db)
     
-    total_rep = len(db[uid]["rep_history"])
-    resp = f"{emoji} {get_user_link(uid, target.full_name)} {action_text}\nТвоя репутація: <b>{total_rep}</b>"
+    total = len(db[cid][uid]["rep_history"])
+    resp = f"{emo} {get_user_link(uid, target.full_name)} {act}\nТвоя репутація тут: <b>{total}</b>"
     await message.answer(f"{resp}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
-# --- ТОПИ ТА СТАТИСТИКА ПЕРІОДІВ ---
+# --- ТОПИ ---
 @dp.message(Command("toprep"))
 async def top_total(message: Message):
-    items = [(data["name"], uid, len(data.get("rep_history", []))) for uid, data in db.items() if len(data.get("rep_history", [])) > 0]
+    cid = str(message.chat.id)
+    if cid not in db: return await message.answer("Порожньо.")
+    items = [(d["name"], u, len(d.get("rep_history", []))) for u, d in db[cid].items() if len(d.get("rep_history", [])) > 0]
     items.sort(key=lambda x: x[2], reverse=True)
-    msg = "🏆 <b>ТОП-20 репутації за весь час:</b>\n\n"
-    for i, (name, uid, score) in enumerate(items[:20], 1):
-        msg += f"{i}. {get_user_link(uid, name)} — <b>{score}</b>\n"
-    await message.answer(f"{msg if items else 'ТОП порожній.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
+    msg = "🏆 <b>ТОП-20 репутації чату:</b>\n\n"
+    for i, (n, u, s) in enumerate(items[:20], 1): msg += f"{i}. {get_user_link(u, n)} — <b>{s}</b>\n"
+    await message.answer(f"{msg if items else 'Порожньо.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
 @dp.message(Command("toprepm"))
 async def top_period(message: Message, command: CommandObject):
-    if not command.args or len(command.args.split()) < 2:
-        return await message.answer(f"Формат: <code>/toprepm 2026.01.01 2026.12.31</code>{get_footer()}", parse_mode="HTML")
+    cid = str(message.chat.id)
+    if not command.args or len(command.args.split()) < 2 or cid not in db:
+        return await message.answer("Використовуй: /toprepm 2026.01.01 2026.12.31")
     try:
         args = command.args.replace(".", "-").split()
-        start_dt, end_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
+        s_dt, e_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
         res = []
-        for uid, data in db.items():
-            count = sum(1 for d in data.get("rep_history", []) if start_dt <= datetime.strptime(d, "%Y-%m-%d") <= end_dt)
-            if count > 0: res.append((data["name"], uid, count))
+        for u, d in db[cid].items():
+            cnt = sum(1 for x in d.get("rep_history", []) if s_dt <= datetime.strptime(x, "%Y-%m-%d") <= e_dt)
+            if cnt > 0: res.append((d["name"], u, cnt))
         res.sort(key=lambda x: x[2], reverse=True)
-        msg = f"🗓 <b>ТОП репутації за {args[0]} — {args[1]}:</b>\n\n"
-        for i, (name, uid, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(uid, name)} — <b>{s}</b>\n"
+        msg = f"🗓 <b>ТОП репутації ({args[0]} - {args[1]}):</b>\n\n"
+        for i, (n, u, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(u, n)} — <b>{s}</b>\n"
         await message.answer(f"{msg if res else 'Даних немає.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
-    except: await message.answer(f"Помилка формату дат!{get_footer()}", parse_mode="HTML")
+    except: await message.answer("Помилка дати!")
 
+# --- СТАТИСТИКА ---
 @dp.message(Command("statistics"))
 async def stats_total(message: Message):
-    items = [(data["name"], uid, len(data.get("msg_history", []))) for uid, data in db.items() if len(data.get("msg_history", [])) > 0]
+    cid = str(message.chat.id)
+    if cid not in db: return await message.answer("Порожньо.")
+    items = [(d["name"], u, len(d.get("msg_history", []))) for u, d in db[cid].items() if len(d.get("msg_history", [])) > 0]
     items.sort(key=lambda x: x[2], reverse=True)
-    msg = "📊 <b>Статистика повідомлень за весь час:</b>\n\n"
-    for i, (name, uid, count) in enumerate(items[:20], 1):
-        msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
-    await message.answer(f"{msg if items else 'Статистика порожня.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
+    msg = "📊 <b>Статистика повідомлень чату:</b>\n\n"
+    for i, (n, u, c) in enumerate(items[:20], 1): msg += f"{i}. {get_user_link(u, n)} — <b>{c}</b>\n"
+    await message.answer(f"{msg if items else 'Порожньо.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
 @dp.message(Command("statisticsm"))
-async def stats_period_msg(message: Message, command: CommandObject):
-    if not command.args or len(command.args.split()) < 2:
-        return await message.answer(f"Формат: <code>/statisticsm 2026.01.01 2026.12.31</code>{get_footer()}", parse_mode="HTML")
+async def stats_period(message: Message, command: CommandObject):
+    cid = str(message.chat.id)
+    if not command.args or len(command.args.split()) < 2 or cid not in db:
+        return await message.answer("Використовуй: /statisticsm 2026.01.01 2026.12.31")
     try:
         args = command.args.replace(".", "-").split()
-        start_dt, end_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
+        s_dt, e_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
         res = []
-        for uid, data in db.items():
-            count = sum(1 for d in data.get("msg_history", []) if start_dt <= datetime.strptime(d, "%Y-%m-%d") <= end_dt)
-            if count > 0: res.append((data["name"], uid, count))
+        for u, d in db[cid].items():
+            cnt = sum(1 for x in d.get("msg_history", []) if s_dt <= datetime.strptime(x, "%Y-%m-%d") <= e_dt)
+            if cnt > 0: res.append((d["name"], u, cnt))
         res.sort(key=lambda x: x[2], reverse=True)
-        msg = f"🗓 <b>Статистика повідомлень за {args[0]} — {args[1]}:</b>\n\n"
-        for i, (name, uid, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(uid, name)} — <b>{s}</b>\n"
+        msg = f"🗓 <b>Статистика ({args[0]} - {args[1]}):</b>\n\n"
+        for i, (n, u, s) in enumerate(res[:20], 1): msg += f"{i}. {get_user_link(u, n)} — <b>{s}</b>\n"
         await message.answer(f"{msg if res else 'Даних немає.'}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
-    except: await message.answer(f"Помилка формату дат!{get_footer()}", parse_mode="HTML")
+    except: await message.answer("Помилка дати!")
 
-# --- ФІЛЬТРИ (АДМІН) ---
+# --- ФІЛЬТРИ ---
 @dp.message(Command("filters"))
 async def show_filters(message: Message):
     if not await is_admin(message): return
     cid = str(message.chat.id)
     if cid not in filters or not filters[cid]: return await message.answer("Список порожній.")
     list_f = "\n".join([f"- <code>{w}</code>" for w in filters[cid].keys()])
-    await message.answer(f"<b>Список фільтрів у HAY DAY ua БОРДЕЛЬ-КУРІЛКА🌿🔞:</b>\n{list_f}", parse_mode="HTML")
+    await message.answer(f"<b>Фільтри чату:</b>\n{list_f}", parse_mode="HTML")
 
 @dp.message(Command("filter"))
 async def set_filter(message: Message, command: CommandObject):
@@ -174,20 +172,22 @@ async def stop_filter(message: Message, command: CommandObject):
     if cid in filters and trigger in filters[cid]:
         del filters[cid][trigger]
         save_data(FILTERS_FILE, filters)
-        await message.answer(f"🚫 Фільтр '<b>{trigger}</b>' видалено!", parse_mode="HTML")
+        await message.answer(f"🚫 Видалено!", parse_mode="HTML")
     else: await message.answer("Не знайдено.")
 
 # --- ОБРОБНИК ---
 @dp.message()
 async def handle_all(message: Message):
     if not message.from_user or message.from_user.is_bot: return
-    uid, today = str(message.from_user.id), datetime.now().strftime("%Y-%m-%d")
-    if uid not in db: db[uid] = {"name": message.from_user.full_name, "rep_history": [], "msg_history": []}
-    db[uid].setdefault("msg_history", [])
-    db[uid]["msg_history"].append(today)
+    cid, uid, today = str(message.chat.id), str(message.from_user.id), datetime.now().strftime("%Y-%m-%d")
+    if cid not in db: db[cid] = {}
+    if uid not in db[cid]: db[cid][uid] = {"name": message.from_user.full_name, "rep_history": [], "msg_history": []}
+    db[cid][uid].setdefault("msg_history", [])
+    db[cid][uid]["msg_history"].append(today)
+    db[cid][uid]["name"] = message.from_user.full_name
     save_data(DATA_FILE, db)
     if message.text:
-        cid, word = str(message.chat.id), message.text.lower()
+        word = message.text.lower()
         if cid in filters and word in filters[cid]:
             f = filters[cid][word]
             if f.get("photo"): await message.answer_photo(f["photo"], caption=f["text"] or "")
