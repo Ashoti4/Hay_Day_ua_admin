@@ -28,9 +28,12 @@ def save_data(file, data):
     with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# Структура: {"uid": {"name": "...", "rep_history": [...], "msg_history": [...]}}
 db = load_data(DATA_FILE)
 filters = load_data(FILTERS_FILE)
+
+# Функція для посилання на юзера
+def get_user_link(uid, name):
+    return hlink(name, f"tg://user?id={uid}")
 
 # --- ПРИВІТАННЯ ---
 @dp.message(F.new_chat_members)
@@ -53,7 +56,7 @@ async def welcome(message: Message):
 async def add_rep(message: Message):
     if not message.reply_to_message: return
     target = message.reply_to_message.from_user
-    if target.id == message.from_user.id: return
+    if target.id == message.from_user.id or target.is_bot: return
     
     uid = str(target.id)
     today = datetime.now().strftime("%Y-%m-%d")
@@ -63,31 +66,32 @@ async def add_rep(message: Message):
     db[uid]["name"] = target.full_name
     save_data(DATA_FILE, db)
     
-    await message.answer(f"👍 {hlink(target.full_name, f'tg://user?id={target.id}')} отримав +1 до репутації!", parse_mode="HTML")
+    await message.answer(f"👍 {get_user_link(uid, target.full_name)} отримав +1 до репутації!", parse_mode="HTML")
 
 # --- СТАТИСТИКА ПОВІДОМЛЕНЬ ---
 @dp.message(Command("statistics"))
 async def stats_total(message: Message):
     items = []
     for uid, data in db.items():
-        items.append((data["name"], uid, len(data.get("msg_history", []))))
+        count = len(data.get("msg_history", []))
+        if count > 0: items.append((data["name"], uid, count))
     
     items.sort(key=lambda x: x[2], reverse=True)
     msg = "📊 <b>Статистика повідомлень за весь час:</b>\n\n"
     for i, (name, uid, count) in enumerate(items[:20], 1):
-        msg += f"{i}. {hlink(name, f'tg://user?id={uid}')} — <b>{count}</b>\n"
-    await message.answer(msg, parse_mode="HTML")
+        msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
+    await message.answer(msg if items else "Статистика порожня.", parse_mode="HTML")
 
 @dp.message(Command("statisticsm"))
 async def stats_period(message: Message, command: CommandObject):
     if not command.args or len(command.args.split()) < 2:
-        return await message.answer("Формат: <code>/statisticsm 2026.01.01 2026.02.22</code>", parse_mode="HTML")
+        return await message.answer("Формат: <code>/statisticsm 2026.01.01 2026.12.31</code>", parse_mode="HTML")
     
     try:
         args = command.args.replace(".", "-").split()
         start_dt = datetime.strptime(args[0], "%Y-%m-%d")
         end_dt = datetime.strptime(args[1], "%Y-%m-%d")
-    except: return await message.answer("Помилка формату!")
+    except: return await message.answer("Помилка! Використовуй РРРР.ММ.ДД")
 
     res = []
     for uid, data in db.items():
@@ -97,28 +101,32 @@ async def stats_period(message: Message, command: CommandObject):
     res.sort(key=lambda x: x[2], reverse=True)
     msg = f"🗓 <b>Повідомлення за період {args[0]} — {args[1]}:</b>\n\n"
     for i, (name, uid, count) in enumerate(res[:20], 1):
-        msg += f"{i}. {hlink(name, f'tg://user?id={uid}')} — <b>{count}</b>\n"
-    await message.answer(msg if res else "Немає даних за цей період.", parse_mode="HTML")
+        msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
+    await message.answer(msg if res else "Немає повідомлень за цей період.", parse_mode="HTML")
 
 # --- ТОПИ РЕПУТАЦІЇ ---
 @dp.message(Command("toprep"))
 async def top_total(message: Message):
     items = []
     for uid, data in db.items():
-        items.append((data["name"], uid, len(data.get("rep_history", []))))
+        count = len(data.get("rep_history", []))
+        if count > 0: items.append((data["name"], uid, count))
     items.sort(key=lambda x: x[2], reverse=True)
     msg = "🏆 <b>ТОП-20 репутації за весь час:</b>\n\n"
     for i, (name, uid, score) in enumerate(items[:20], 1):
-        msg += f"{i}. {hlink(name, f'tg://user?id={uid}')} — <b>{score}</b>\n"
-    await message.answer(msg, parse_mode="HTML")
+        msg += f"{i}. {get_user_link(uid, name)} — <b>{score}</b>\n"
+    await message.answer(msg if items else "Список порожній.", parse_mode="HTML")
 
 @dp.message(Command("toprepm"))
 async def top_period(message: Message, command: CommandObject):
     if not command.args or len(command.args.split()) < 2:
-        return await message.answer("Формат: <code>/toprepm 2026.01.01 2026.02.22</code>", parse_mode="HTML")
-    args = command.args.replace(".", "-").split()
-    start_dt = datetime.strptime(args[0], "%Y-%m-%d")
-    end_dt = datetime.strptime(args[1], "%Y-%m-%d")
+        return await message.answer("Формат: <code>/toprepm 2026.01.01 2026.12.31</code>", parse_mode="HTML")
+    
+    try:
+        args = command.args.replace(".", "-").split()
+        start_dt = datetime.strptime(args[0], "%Y-%m-%d")
+        end_dt = datetime.strptime(args[1], "%Y-%m-%d")
+    except: return await message.answer("Помилка формату!")
 
     res = []
     for uid, data in db.items():
@@ -128,8 +136,8 @@ async def top_period(message: Message, command: CommandObject):
     
     msg = f"📊 <b>ТОП репутації за період {args[0]} — {args[1]}:</b>\n\n"
     for i, (name, uid, score) in enumerate(res[:20], 1):
-        msg += f"{i}. {hlink(name, f'tg://user?id={uid}')} — <b>{score}</b>\n"
-    await message.answer(msg if res else "Ніхто не отримував репутацію.", parse_mode="HTML")
+        msg += f"{i}. {get_user_link(uid, name)} — <b>{score}</b>\n"
+    await message.answer(msg if res else "Ніхто не отримував репутацію за цей період.", parse_mode="HTML")
 
 # --- ФІЛЬТРИ ---
 @dp.message(Command("filter"))
@@ -147,26 +155,39 @@ async def filter_cmd(message: Message, command: CommandObject):
     save_data(FILTERS_FILE, filters)
     await message.answer(f"✅ Фільтр '<b>{trigger}</b>' збережено!", parse_mode="HTML")
 
-# --- ЗАГАЛЬНИЙ ХЕНДЛЕР (СТАТИСТИКА ТА ФІЛЬТРИ) ---
+@dp.message(Command("stop"))
+async def stop_filter(message: Message, command: CommandObject):
+    chat_id = str(message.chat.id)
+    if not command.args: return await message.answer("Вкажи назву фільтра: <code>/stop слово</code>")
+    trigger = command.args.lower()
+    if chat_id in filters and trigger in filters[chat_id]:
+        del filters[chat_id][trigger]
+        save_data(FILTERS_FILE, filters)
+        await message.answer(f"🚫 Фільтр '<b>{trigger}</b>' зупинено та видалено.", parse_mode="HTML")
+    else:
+        await message.answer("Такого фільтра не існує.")
+
+# --- ГОЛОВНИЙ ОБРОБНИК ---
 @dp.message()
 async def handle_all(message: Message):
     if not message.from_user or message.from_user.is_bot: return
+    
     uid = str(message.from_user.id)
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Логування повідомлення для статистики
+    # 1. Запис повідомлення в статистику
     if uid not in db: db[uid] = {"name": message.from_user.full_name, "rep_history": [], "msg_history": []}
     db[uid]["msg_history"].append(today)
     db[uid]["name"] = message.from_user.full_name
     save_data(DATA_FILE, db)
 
-    # Перевірка фільтрів
+    # 2. Перевірка фільтрів
     if message.text:
         cid = str(message.chat.id)
         word = message.text.lower()
         if cid in filters and word in filters[cid]:
             f = filters[cid][word]
-            if f["photo"]: await message.answer_photo(f["photo"], caption=f["text"] or "")
+            if f.get("photo"): await message.answer_photo(f["photo"], caption=f["text"] or "")
             else: await message.answer(f["text"])
 
 async def main(): await dp.start_polling(bot)
