@@ -58,7 +58,7 @@ async def welcome(message: Message):
 async def goodbye(message: Message):
     user_name = message.left_chat_member.full_name
     # Твій персоналізований текст прощання
-    bye_text = f"🌬 {user_name} втік(ла) з ферми... Певно, коза в дупу боднула"
+    bye_text = f" {user_name} втік(ла) з ферми... Певно, коза в дупу боднула 💨 "
     await message.answer(f"{bye_text}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
 # --- РЕПУТАЦІЯ ОКРЕМО ДЛЯ КОЖНОГО ЧАТУ ---
