@@ -34,26 +34,28 @@ filters = load_data(FILTERS_FILE)
 def get_user_link(uid, name):
     return hlink(name, f"tg://user?id={uid}")
 
-# --- ПРИВІТАННЯ (ОКУЛЬТУРЕНІ ВАРІАНТИ) ---
+# --- ПРИВІТАННЯ З ОФОРМЛЕННЯМ ТА НІКОМ ---
 @dp.message(F.new_chat_members)
 async def welcome(message: Message):
+    # Отримуємо нік людини
     user_name = message.new_chat_members[0].mention_html()
     
+    # Твої варіанти з ніком на початку та смайликами
     greetings = [
-        f"🌿 <b>Ласкаво просимо в HAY DAY ua БОРДЕЛЬ-КУРІЛКА!</b>\n\n{user_name}, тут обговорюють і Hay Day, і життя, і все між цим. Почувайся як вдома, але не забувай: ферма сама себе не прокачає! 👨‍🌾",
+        f"{user_name} 👋 <b>Ласкаво просимо в HAY DAY ua БОРДЕЛЬ-КУРІЛКА🌿🔞</b>\n\nТут обговорюють і Hay Day, і життя, і все між цим 😏\nПочувайся як вдома, але не забувай: ферма сама себе не прокачає 🚜🌾",
         
-        f"🍅 <b>Новий фермер у курилці!</b>\n\n{user_name}, заходь, розкладай помідори по ящиках і знайомся з нашими неадекватами. 😂 Тут можна: питати про гру, жалітись на події і просто базікати про життя.",
+        f"{user_name} 🍅 <b>Новий фермер у курилці! 🐷💨</b>\n\nЗаходь, розкладай помідори по ящиках і знайомся з нашими неадекватами 😂🔥\nТут можна: питати про гру, жалітись на події і просто базікати про життя 🍻🍎",
         
-        f"🚬 <b>Вітаємо в нашому борделі… ой, курилці!</b>\n\n{user_name}, тут дорослі розмови, дружня атмосфера і Hay Day без пафосу. Якщо загубишся — питай, не кусаємось (ну майже). 😉",
+        f"{user_name} 🚬 <b>Вітаємо в нашому борделі… ой, курилці 💃🥒</b>\n\nТут дорослі розмови, дружня атмосфера і Hay Day без пафосу ✨🚜\nЯкщо загубишся — питай, не кусаємось (ну майже) 😉🍓",
         
-        f"🚜 <b>Ти щойно заїхав(ла) у HAY DAY ua БОРДЕЛЬ-КУРІЛКА!</b>\n\n{user_name}, тут можна:\n🔹 скиглити на Грега\n🔹 хизуватись фермами\n🔹 просто поговорити про життя\n\nРозташовуйся зручно! ✨",
+        f"{user_name} 🚜 <b>Ти щойно заїхав(ла) у HAY DAY ua БОРДЕЛЬ-КУРІЛКА 🌽💨</b>\n\nТут можна:\n🔹 скиглити на Грега 🎅😒\n🔹 хизуватись фермами 🏗💎\n🔹 просто поговорити про життя 🗣🍺\n\nРозташовуйся зручно! ✨🍏",
         
-        f"🍻 <b>Вітаємо в місці, де Hay Day — не єдина тема для розмов!</b>\n\n{user_name}, тут без цензури, зате з гумором і підтримкою. Пиши, не соромся — своїх тут видно одразу! 🙌"
+        f"{user_name} 👋 <b>Ласкаво просимо в HAY DAY ua БОРДЕЛЬ-КУРІЛКА🌿🔞</b>\n\nТут без цензури, зате з гумором і підтримкою 😉\nПочувайся як вдома. Якщо потрібна допомога — питай, ми не кусаємось (ну, майже) 🚜🌾"
     ]
     
     await message.answer(random.choice(greetings), parse_mode="HTML")
 
-# --- РЕПУТАЦІЯ ("+") ---
+# --- РЕПУТАЦІЯ ---
 @dp.message(F.text == "+")
 async def add_rep(message: Message):
     if not message.reply_to_message: return
@@ -70,77 +72,35 @@ async def add_rep(message: Message):
     
     await message.answer(f"👍 {get_user_link(uid, target.full_name)} отримав +1 до репутації!", parse_mode="HTML")
 
-# --- СТАТИСТИКА ПОВІДОМЛЕНЬ ---
-@dp.message(Command("statistics"))
-async def stats_total(message: Message):
-    items = [(data["name"], uid, len(data.get("msg_history", []))) for uid, data in db.items() if len(data.get("msg_history", [])) > 0]
-    items.sort(key=lambda x: x[2], reverse=True)
-    msg = "📊 <b>Статистика повідомлень за весь час:</b>\n\n"
-    for i, (name, uid, count) in enumerate(items[:20], 1):
-        msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
-    await message.answer(msg if items else "Статистика порожня.", parse_mode="HTML")
-
-@dp.message(Command("statisticsm"))
-async def stats_period(message: Message, command: CommandObject):
-    if not command.args or len(command.args.split()) < 2:
-        return await message.answer("Формат: <code>/statisticsm 2026.01.01 2026.12.31</code>", parse_mode="HTML")
-    try:
-        args = command.args.replace(".", "-").split()
-        start_dt, end_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
-        res = []
-        for uid, data in db.items():
-            count = sum(1 for d in data.get("msg_history", []) if start_dt <= datetime.strptime(d, "%Y-%m-%d") <= end_dt)
-            if count > 0: res.append((data["name"], uid, count))
-        res.sort(key=lambda x: x[2], reverse=True)
-        msg = f"🗓 <b>Повідомлення за період {args[0]} — {args[1]}:</b>\n\n"
-        for i, (name, uid, count) in enumerate(res[:20], 1):
-            msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
-        await message.answer(msg if res else "Повідомлень немає.", parse_mode="HTML")
-    except: await message.answer("Помилка формату дат!")
-
-# --- ТОПИ РЕПУТАЦІЇ ---
-@dp.message(Command("toprep"))
-async def top_total(message: Message):
-    items = [(data["name"], uid, len(data.get("rep_history", []))) for uid, data in db.items() if len(data.get("rep_history", [])) > 0]
-    items.sort(key=lambda x: x[2], reverse=True)
-    msg = "🏆 <b>ТОП-20 репутації за весь час:</b>\n\n"
-    for i, (name, uid, score) in enumerate(items[:20], 1):
-        msg += f"{i}. {get_user_link(uid, name)} — <b>{score}</b>\n"
-    await message.answer(msg if items else "ТОП порожній.", parse_mode="HTML")
-
-@dp.message(Command("toprepm"))
-async def top_period(message: Message, command: CommandObject):
-    if not command.args or len(command.args.split()) < 2:
-        return await message.answer("Формат: <code>/toprepm 2026.01.01 2026.12.31</code>", parse_mode="HTML")
-    try:
-        args = command.args.replace(".", "-").split()
-        start_dt, end_dt = datetime.strptime(args[0], "%Y-%m-%d"), datetime.strptime(args[1], "%Y-%m-%d")
-        res = []
-        for uid, data in db.items():
-            count = sum(1 for d in data.get("rep_history", []) if start_dt <= datetime.strptime(d, "%Y-%m-%d") <= end_dt)
-            if count > 0: res.append((data["name"], uid, count))
-        res.sort(key=lambda x: x[2], reverse=True)
-        msg = f"📊 <b>ТОП репутації за період {args[0]} — {args[1]}:</b>\n\n"
-        for i, (name, uid, score) in enumerate(res[:20], 1):
-            msg += f"{i}. {get_user_link(uid, name)} — <b>{score}</b>\n"
-        await message.answer(msg if res else "Репутації за період немає.", parse_mode="HTML")
-    except: await message.answer("Помилка формату дат!")
-
-# --- ФІЛЬТРИ ---
-@dp.message(Command("filter"))
-async def filter_cmd(message: Message, command: CommandObject):
+# --- КОМАНДА /filters (СПИСОК) ---
+@dp.message(Command("filters"))
+async def show_filters(message: Message):
     chat_id = str(message.chat.id)
-    if not command.args:
-        if chat_id not in filters or not filters[chat_id]: return await message.answer("Список фільтрів порожній.")
-        list_f = "\n".join([f"- {word}" for word in filters[chat_id].keys()])
-        return await message.answer(f"✅ <b>Активні фільтри:</b>\n{list_f}", parse_mode="HTML")
-    if not message.reply_to_message: return await message.answer("Відповідай на повідомлення командою <code>/filter слово</code>")
+    if chat_id not in filters or not filters[chat_id]:
+        return await message.answer("Список фільтрів порожній.")
+    
+    list_f = "\n".join([f"- <code>{word}</code>" for word in filters[chat_id].keys()])
+    header = "<b>Список фільтрів у HAY DAY ua БОРДЕЛЬ-КУРІЛКА🌿🔞:</b>\n"
+    await message.answer(f"{header}{list_f}", parse_mode="HTML")
+
+# --- КОМАНДА /filter (ДОДАТИ) ---
+@dp.message(Command("filter"))
+async def set_filter(message: Message, command: CommandObject):
+    chat_id = str(message.chat.id)
+    if not command.args or not message.reply_to_message:
+        return await message.answer("Відповідай на повідомлення командою <code>/filter слово</code>")
+    
     trigger = command.args.lower()
     if chat_id not in filters: filters[chat_id] = {}
-    filters[chat_id][trigger] = {"text": message.reply_to_message.text or message.reply_to_message.caption, "photo": message.reply_to_message.photo[-1].file_id if message.reply_to_message.photo else None}
+    
+    filters[chat_id][trigger] = {
+        "text": message.reply_to_message.text or message.reply_to_message.caption,
+        "photo": message.reply_to_message.photo[-1].file_id if message.reply_to_message.photo else None
+    }
     save_data(FILTERS_FILE, filters)
     await message.answer(f"✅ Фільтр '<b>{trigger}</b>' збережено!", parse_mode="HTML")
 
+# --- КОМАНДА /stop (ВИДАЛИТИ) ---
 @dp.message(Command("stop"))
 async def stop_filter(message: Message, command: CommandObject):
     chat_id = str(message.chat.id)
@@ -151,6 +111,16 @@ async def stop_filter(message: Message, command: CommandObject):
         save_data(FILTERS_FILE, filters)
         await message.answer(f"🚫 Фільтр '<b>{trigger}</b>' видалено.", parse_mode="HTML")
     else: await message.answer("Фільтр не знайдено.")
+
+# --- СТАТИСТИКА ПОВІДОМЛЕНЬ ---
+@dp.message(Command("statistics"))
+async def stats_total(message: Message):
+    items = [(data["name"], uid, len(data.get("msg_history", []))) for uid, data in db.items() if len(data.get("msg_history", [])) > 0]
+    items.sort(key=lambda x: x[2], reverse=True)
+    msg = "📊 <b>Статистика повідомлень за весь час:</b>\n\n"
+    for i, (name, uid, count) in enumerate(items[:20], 1):
+        msg += f"{i}. {get_user_link(uid, name)} — <b>{count}</b>\n"
+    await message.answer(msg if items else "Статистика порожня.", parse_mode="HTML")
 
 # --- ОБРОБКА ПОВІДОМЛЕНЬ ---
 @dp.message()
