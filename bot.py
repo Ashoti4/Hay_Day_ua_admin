@@ -26,7 +26,7 @@ def save_data(file, data):
 db, filters = load_data(DATA_FILE), load_data(FILTERS_FILE)
 
 def get_user_link(uid, name): return hlink(name, f"tg://user?id={uid}")
-def get_footer(): return f"\n\n🏠 {hlink('@hayday18pluS', CHAT_LINK)}"
+def get_footer(): return f"\n\n🏠 {hlink('HAY DAY ua БОРДЕЛЬ-КУРІЛКА🌱🔞', CHAT_LINK)}"
 
 async def is_admin(message: Message):
     try:
@@ -44,7 +44,7 @@ async def welcome(msg: Message):
 
 @dp.message(F.left_chat_member)
 async def goodbye(msg: Message):
-    txt = f"🌬 {msg.left_chat_member.full_name} втік(ла) з ферми... Певно, коза в дупу боднула"
+    txt = f"🌬 {msg.left_chat_member.full_name} втік(ла) з ферми... Певно, коза в дупу боднула 💨 "
     await msg.answer(f"{txt}{get_footer()}", parse_mode="HTML", disable_web_page_preview=True)
 
 # --- РЕПУТАЦІЯ ---
