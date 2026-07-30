@@ -13,7 +13,7 @@ if not os.path.exists(DB_DIR):
 DATA_FILE = f"{DB_DIR}/bot_data.json"
 FILTERS_FILE = f"{DB_DIR}/filters.json"
 
-TOKEN = "8571874406:AAFw4X1B9GGfOluteAPkRMvoTYxlgG2bdd0"
+TOKEN = "8380041126:AAHd8cn3Vf12bNHtV8Fj56D_DR8kfSr8B3A"
 OWNER_USERNAME = "I_AM_ARMY_07"
 
 bot = Bot(token=TOKEN)
